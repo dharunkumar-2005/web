@@ -1,145 +1,346 @@
-import React, { useState, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+// @ts-nocheck
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { initializeApp } from "firebase/app";
-import { getDatabase, ref, set, push, onValue, remove } from "firebase/database";
+import { getDatabase, ref, set, onValue, remove, off } from "firebase/database";
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
+import { Doughnut } from 'react-chartjs-2';
+import { Mail, BarChart3, Users, Clock, AlertTriangle, CheckCircle } from 'lucide-react';
+import LandingPage from './components/LandingPage';
+import StaffDashboard from './components/StaffDashboard';
+import StudentPortalNew from './components/StudentPortal';
+import PhotoModal from './components/PhotoModal';
+import { excelService } from './services/excelService';
+import { emailService } from './services/emailService';
 
-// FIREBASE CONFIG - Unga details
+ChartJS.register(ArcElement, Tooltip, Legend);
+
+// NOTE: during development make sure your Realtime Database security rules allow reads/writes
+// for testing, e.g.:
+// {
+//   "rules": {
+//     ".read": true,
+//     ".write": true
+//   }
+// }
+// Remember to lock them down before going to production.
 const firebaseConfig = {
   apiKey: "AIzaSyCypMJilnNAD3KkM01tIh5AR7OXir4Hd0M",
   authDomain: "kncet-attendance.firebaseapp.com",
   databaseURL: "https://kncet-attendance-default-rtdb.firebaseio.com",
   projectId: "kncet-attendance",
-  storageBucket: "kncet-attendance.firebasestorage.app",
-  messagingSenderId: "417435764172",
-  appId: "1:417435764172:web:337429ee15a1ce3476c969",
-  measurementId: "G-WF67LMBG9Z"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-const styles = {
-  container: { minHeight: '100vh', display: 'flex', flexDirection: 'column' as 'column', alignItems: 'center', justifyContent: 'center', backgroundImage: 'url("https://universitykart.com/Content/upload/admin/yy2kmbie.0xm.jpg")', backgroundSize: 'cover', backgroundPosition: 'center', fontFamily: "'Poppins', sans-serif", padding: '20px', position: 'relative' as 'relative' },
-  overlay: { position: 'absolute' as 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.85)', zIndex: 1 },
-  card: { backgroundColor: 'rgba(255, 255, 255, 0.15)', padding: '25px', borderRadius: '24px', backdropFilter: 'blur(15px)', width: '100%', maxWidth: '500px', textAlign: 'center' as 'center', zIndex: 2, color: '#fff', border: '1px solid rgba(255,255,255,0.2)' },
-  input: { width: '90%', padding: '14px', margin: '15px 0', borderRadius: '10px', border: 'none', fontSize: '18px', fontWeight: 'bold' as 'bold', textAlign: 'center' as 'center', color: '#333' },
-  button: { width: '90%', padding: '14px', backgroundColor: '#f39c12', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', cursor: 'pointer', fontWeight: 'bold' as 'bold' },
-  adminSection: { backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: '10px', padding: '15px', marginTop: '15px', textAlign: 'left' as 'left' },
-  listItem: { padding: '8px 0', borderBottom: '1px solid #444', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  delBtn: { backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '4px', padding: '4px 8px', fontSize: '11px', cursor: 'pointer' }
-};
-
-function App() {
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [regNumber, setRegNumber] = useState('');
-  const [message, setMessage] = useState('');
-  const [authorizedStudents, setAuthorizedStudents] = useState<any>({});
-  const [attendanceData, setAttendanceData] = useState<any>({});
-  
-  // State for Device Lock
-  const [lockedReg, setLockedReg] = useState<string | null>(() => localStorage.getItem('kncet_locked_reg'));
-
-  const today = new Date().toLocaleDateString();
-
-  useEffect(() => {
-    onValue(ref(db, 'students'), (snapshot) => { setAuthorizedStudents(snapshot.val() || {}); });
-    onValue(ref(db, 'attendance'), (snapshot) => { setAttendanceData(snapshot.val() || {}); });
-  }, []);
-
-  const handleSubmit = () => {
-    const trimmedReg = regNumber.trim().toUpperCase();
-    if (!Object.values(authorizedStudents).includes(trimmedReg)) {
-      setMessage("❌ Student Not Authorized!");
-      return;
-    }
-    if (lockedReg && lockedReg !== trimmedReg) {
-      setMessage(`❌ Device Locked to ${lockedReg}`);
-      return;
-    }
-    push(ref(db, 'attendance'), { regNo: trimmedReg, time: new Date().toLocaleTimeString(), date: today })
-      .then(() => {
-        if (!lockedReg) {
-          localStorage.setItem('kncet_locked_reg', trimmedReg);
-          setLockedReg(trimmedReg);
-        }
-        setMessage(`✅ Success: ${trimmedReg}`);
-        setRegNumber('');
-        setTimeout(() => setMessage(''), 3000);
-      });
-  };
-
-  const studentList = Object.keys(authorizedStudents).map(key => ({ id: key, val: authorizedStudents[key] }));
-  const todayList = Object.keys(attendanceData)
-    .map(key => ({ id: key, ...attendanceData[key] }))
-    .filter(r => r.date === today);
-
-  return (
-    <div style={styles.container}>
-      <div style={styles.overlay}></div>
-      <div style={styles.card}>
-        {!isAdmin ? (
-          <div>
-            <h2 style={{color: '#f39c12'}}>KNCET PORTAL</h2>
-            {lockedReg && <p style={{fontSize: '12px', color: '#2ecc71'}}>Linked: {lockedReg}</p>}
-            <input style={styles.input} type="text" placeholder="REGISTER NUMBER" value={regNumber} onChange={(e) => setRegNumber(e.target.value)} />
-            <button style={styles.button} onClick={handleSubmit}>SUBMIT ATTENDANCE</button>
-            <p onClick={() => { if(prompt("Password:") === "1234") setIsAdmin(true); }} style={{marginTop: '30px', cursor: 'pointer', fontSize: '11px', opacity: 0.5}}>Admin Login</p>
-          </div>
-        ) : (
-          <div style={{width: '100%', maxHeight: '85vh', overflowY: 'auto'}}>
-            <h3 style={{color: '#f39c12'}}>ADMIN PANEL</h3>
-            
-            {/* RESET DEVICE LOCK - Inga dhaan neenga keta fix irukku */}
-            <div style={{...styles.adminSection, border: '1px solid #e67e22'}}>
-              <h4 style={{marginTop: 0, color: '#e67e22'}}>Device Management</h4>
-              <p style={{fontSize: '11px'}}>Ippo use panra mobile-la lock aagi irukkura number-ah release panna keezha irukkura button-ah click pannunga.</p>
-              <button style={{...styles.button, backgroundColor: '#e67e22', padding: '10px', fontSize: '12px'}} onClick={() => {
-                localStorage.removeItem('kncet_locked_reg');
-                setLockedReg(null);
-                alert("This device is now unlocked! Refresh the page.");
-                window.location.reload();
-              }}>RESET THIS DEVICE LOCK</button>
-            </div>
-
-            <div style={styles.adminSection}>
-              <div style={{display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #27ae60', paddingBottom: '5px'}}>
-                <span style={{color: '#27ae60'}}>Auth Students</span>
-                <button style={{backgroundColor: '#27ae60', color: '#fff', border: 'none', borderRadius: '4px'}} onClick={() => {
-                  const id = prompt("Register Number:");
-                  if (id) set(ref(db, 'students/' + id.toUpperCase().trim()), id.toUpperCase().trim());
-                }}>+ Add</button>
-              </div>
-              {studentList.map(s => (
-                <div key={s.id} style={styles.listItem}>
-                  <span>{s.val}</span>
-                  <button style={styles.delBtn} onClick={() => remove(ref(db, 'students/' + s.id))}>Del</button>
-                </div>
-              ))}
-            </div>
-
-            <div style={styles.adminSection}>
-              <div style={{color: '#f39c12', borderBottom: '1px solid #f39c12', paddingBottom: '5px'}}>Today Presented ({todayList.length})</div>
-              {todayList.slice().reverse().map(r => (
-                <div key={r.id} style={styles.listItem}>
-                  <span>{r.regNo}</span>
-                  <button style={styles.delBtn} onClick={() => remove(ref(db, 'attendance/' + r.id))}>X</button>
-                </div>
-              ))}
-            </div>
-
-            <button style={{...styles.button, backgroundColor: '#2980b9', marginTop: '15px'}} onClick={() => {
-              const ws = XLSX.utils.json_to_sheet(todayList.map(({id, ...rest}) => rest));
-              const wb = XLSX.utils.book_new();
-              XLSX.utils.book_append_sheet(wb, ws, "Report");
-              XLSX.writeFile(wb, `Report_${today}.xlsx`);
-            }}>Excel</button>
-            <button onClick={() => setIsAdmin(false)} style={{marginTop: '15px', color: '#fff', background: 'none', border: '1px solid #fff', padding: '5px 15px', borderRadius: '5px'}}>Back</button>
-          </div>
-        )}
-        {message && <div style={{marginTop: '15px', color: '#fff', fontSize: '13px'}}>{message}</div>}
-      </div>
-    </div>
-  );
+interface StudentRecord {
+  name: string;
+  regNo: string;
+  time?: string;
+  face?: string;
+  status?: string;
 }
 
-export default App;
+interface Student {
+  name: string;
+  email?: string;
+  parentEmail?: string;
+}
+
+interface AbsentStudent extends StudentRecord {
+  parentEmail?: string;
+}
+
+type AppView = 'landing' | 'staff' | 'student';
+
+// authorized hotspot IP address
+const AUTHORIZED_IP = '210.16.87.86';
+
+export default function App() {
+  const [currentView, setCurrentView] = useState<AppView>('landing');
+  const [ipCheckStatus, setIpCheckStatus] = useState<'pending' | 'authorized' | 'denied'>('pending');
+  const [records, setRecords] = useState<StudentRecord[]>([]);
+  const [allStudents, setAllStudents] = useState<Record<string, Student>>({});
+  const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; name: string; regNo: string } | null>(null);
+  const [sendingEmails, setSendingEmails] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<{ type: 'idle' | 'sending' | 'success' | 'error'; message: string }>({ type: 'idle', message: '' });
+
+  // perform IP gatekeeper before rendering anything else
+  useEffect(() => {
+    const checkIp = async () => {
+      try {
+        const resp = await fetch('https://api.ipify.org?format=json');
+        const data = await resp.json();
+        if (data.ip === AUTHORIZED_IP) {
+          setIpCheckStatus('authorized');
+        } else {
+          setIpCheckStatus('denied');
+        }
+      } catch (err) {
+        console.error('IP check failed', err);
+        setIpCheckStatus('denied');
+      }
+    };
+    checkIp();
+  }, []);
+
+  useEffect(() => {
+    if (ipCheckStatus !== 'authorized') return;
+    // Fetch all students from Firebase
+    const studentsRef = ref(db, 'students');
+    const unsubscribeStudents = onValue(studentsRef, (snapshot) => {
+      const data = snapshot.val();
+      setAllStudents(data || {});
+    });
+
+    // Fetch today's attendance records
+    const attendanceRef = ref(db, 'attendance');
+    const unsubscribeAttendance = onValue(attendanceRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const attendanceArray = Array.isArray(data) ? data : Object.values(data);
+        setRecords(attendanceArray.reverse() as StudentRecord[]);
+      }
+    });
+
+    // Cleanup function - properly unsubscribe from listeners to prevent memory leaks
+    return () => {
+      off(studentsRef);
+      off(attendanceRef);
+    };
+  }, [ipCheckStatus]);
+
+  // Calculate attendance metrics
+  const totalStudents = Object.keys(allStudents).length;
+  const presentCount = records.length;
+  const attendancePercentage = totalStudents > 0 ? ((presentCount / totalStudents) * 100).toFixed(1) : '0.0';
+
+  // Generate absent list using useMemo to prevent unnecessary recalculations
+  const absentList: AbsentStudent[] = useMemo(() => {
+    const presentRegNos = records.map(r => r.regNo);
+    return Object.entries(allStudents)
+      .filter(([regNo]) => !presentRegNos.includes(regNo))
+      .map(([regNo, details]) => ({
+        regNo,
+        name: (details as Student).name,
+        parentEmail: (details as Student).parentEmail
+      }));
+  }, [records, allStudents]);
+
+  // --- Export Excel Report ---
+  const handleExportExcel = () => {
+    try {
+      const exportData = [
+        ...records.map(r => ({
+          name: r.name,
+          regNo: r.regNo,
+          status: 'Present' as const,
+          time: r.time || 'N/A',
+          date: new Date().toLocaleDateString()
+        })),
+        ...absentList.map(a => ({
+          name: a.name,
+          regNo: a.regNo,
+          status: 'Absent' as const,
+          time: 'N/A',
+          date: new Date().toLocaleDateString()
+        }))
+      ];
+
+      excelService.exportAttendanceToExcel(
+        exportData,
+        `Attendance_Report_${new Date().toISOString().split('T')[0]}.xlsx`
+      );
+      setEmailStatus({ type: 'success', message: '✅ Excel report exported successfully!' });
+      setTimeout(() => setEmailStatus({ type: 'idle', message: '' }), 3000);
+    } catch (error) {
+      setEmailStatus({ type: 'error', message: '❌ Error exporting Excel' });
+    }
+  };
+
+  // --- Send Absence Alerts to Parents ---
+  const handleSendEmailAlerts = async () => {
+    if (absentList.length === 0) {
+      setEmailStatus({ type: 'idle', message: 'No absent students to notify' });
+      return;
+    }
+
+    setSendingEmails(true);
+    setEmailStatus({ type: 'sending', message: `📧 Sending alerts to ${absentList.length} parents...` });
+
+    try {
+      const emailsToSend = absentList
+        .filter(student => student.parentEmail)
+        .map(student => ({
+          parent_email: student.parentEmail!,
+          student_name: student.name,
+          registration_number: student.regNo,
+          attendance_date: new Date().toLocaleDateString(),
+          parent_name: 'Parent'
+        }));
+
+      if (emailsToSend.length === 0) {
+        setEmailStatus({ type: 'error', message: '❌ No parent emails configured' });
+        setSendingEmails(false);
+        return;
+      }
+
+      // Verify EmailJS is configured
+      if (!emailService.verifyConfiguration()) {
+        setEmailStatus({
+          type: 'error',
+          message: '❌ EmailJS not configured. Please add your EmailJS credentials.'
+        });
+        setSendingEmails(false);
+        return;
+      }
+
+      const results = await emailService.sendBulkAbsenceAlerts(emailsToSend);
+      setSendingEmails(false);
+
+      if (results.sent > 0) {
+        setEmailStatus({
+          type: 'success',
+          message: `✅ ${results.sent} alerts sent successfully!${results.failed > 0 ? ` (${results.failed} failed)` : ''}`
+        });
+      } else {
+        setEmailStatus({
+          type: 'error',
+          message: `❌ Failed to send alerts. ${results.errors[0] || 'Please check configuration.'}`
+        });
+      }
+    } catch (error) {
+      setEmailStatus({
+        type: 'error',
+        message: `❌ Error: ${error instanceof Error ? error.message : 'Failed to send alerts'}`
+      });
+      setSendingEmails(false);
+    }
+
+    setTimeout(() => setEmailStatus({ type: 'idle', message: '' }), 5000);
+  };
+
+  // --- Handle Student Attendance Submission ---
+  // this function returns a promise so that the caller (StudentPortal) can react to success/failure
+  const handleStudentSubmitAttendance = async (data: { name: string; regNo: string; photo: string; time: string }) => {
+    try {
+      const submissionData = {
+        name: data.name,
+        regNo: data.regNo.toUpperCase(),
+        face: data.photo,
+        time: data.time,
+        date: new Date().toLocaleDateString()
+      };
+      
+      // Push to Firebase attendance
+      const attendanceRef = ref(db, `attendance/${Date.now()}`);
+      await set(attendanceRef, submissionData);
+    } catch (error) {
+      console.error('Error submitting attendance:', error);
+      // rethrow so UI can display proper error
+      throw error;
+    }
+  };
+
+  // --- Add New Student ---
+  const handleAddStudent = async (studentData: { name: string; regNo: string; email: string }) => {
+    try {
+      const regNoUpper = studentData.regNo.toUpperCase().trim();
+      if (!regNoUpper || !studentData.name.trim()) {
+        throw new Error('Name and Registration Number are required');
+      }
+
+      const studentRef = ref(db, `students/${regNoUpper}`);
+      await set(studentRef, {
+        name: studentData.name.trim(),
+        email: studentData.email.trim() || null,
+        added: new Date().toISOString(),
+        parentEmail: studentData.email.trim() || null // Store for alerts
+      });
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('Failed to add student');
+    }
+  };
+
+  // --- Delete Student ---
+  const handleDeleteStudent = async (regNo: string) => {
+    try {
+      const regNoUpper = regNo.toUpperCase().trim();
+      const studentRef = ref(db, `students/${regNoUpper}`);
+      await remove(studentRef);
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('Failed to delete student');
+    }
+  };
+
+  // --- Clear All Attendance Records ---
+  const handleClearAttendance = async () => {
+    try {
+      const attendanceRef = ref(db, 'attendance');
+      await remove(attendanceRef);
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('Failed to clear attendance');
+    }
+  };
+
+  // --- IP Gatekeeper: render loader/denied before the app view ---
+  if (ipCheckStatus === 'pending') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-[#00d1ff]"></div>
+      </div>
+    );
+  }
+  if (ipCheckStatus === 'denied') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black text-white p-4">
+        <div className="text-center">
+          <h1 className="text-3xl font-black mb-4 text-[#ff007a]">Access Denied</h1>
+          <p className="text-lg">Unauthorized Network! Please connect to the KNCET Official Hotspot to access this portal.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Return Conditional Rendering Based on Current View ---
+  if (currentView === 'landing') {
+    return (
+      <LandingPage
+        onStaffClick={() => setCurrentView('staff')}
+        onStudentClick={() => setCurrentView('student')}
+      />
+    );
+  }
+
+  if (currentView === 'student') {
+    return (
+      <StudentPortalNew
+        onLogout={() => setCurrentView('landing')}
+        onSubmitAttendance={handleStudentSubmitAttendance}
+      />
+    );
+  }
+
+  if (currentView === 'staff') {
+    return (
+      <StaffDashboard
+        records={records}
+        allStudents={allStudents}
+        onLogout={() => setCurrentView('landing')}
+        onSendEmails={handleSendEmailAlerts}
+        onExport={handleExportExcel}
+        onAddStudent={handleAddStudent}
+        onDeleteStudent={handleDeleteStudent}
+        onClearAttendance={handleClearAttendance}
+      />
+    );
+  }
+
+  // Return landing page initially
+  return (
+    <LandingPage
+      onStaffClick={() => setCurrentView('staff')}
+      onStudentClick={() => setCurrentView('student')}
+    />
+  );
+}
